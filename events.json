@@ -1,0 +1,42 @@
+[
+  {
+    "event_id": "ev_lhr_01",
+    "name": "Open Mic & Social Night",
+    "activity_type": "Social / Music",
+    "location": "The Colony, Gulberg, Lahore",
+    "lat": 31.5125,
+    "lng": 74.3458,
+    "time_slot": "19:00 - 22:00",
+    "price": "1000 PKR"
+  },
+  {
+    "event_id": "ev_lhr_02",
+    "name": "Sufi Qawwali Evening",
+    "activity_type": "Cultural Night",
+    "location": "Alhamra Arts Council, Lahore",
+    "lat": 31.5543,
+    "lng": 74.3318,
+    "time_slot": "20:00 - 23:00",
+    "price": "1500 PKR"
+  },
+  {
+    "event_id": "ev_lhr_03",
+    "name": "Board Game Mixer",
+    "activity_type": "Social Gaming",
+    "location": "Unwind Cafe, DHA, Lahore",
+    "lat": 31.4789,
+    "lng": 74.3912,
+    "time_slot": "18:00 - 21:00",
+    "price": "1200 PKR"
+  },
+  {
+    "event_id": "ev_lhr_04",
+    "name": "Stand-up Comedy Showcase",
+    "activity_type": "Comedy",
+    "location": "Kickstart, Gulberg, Lahore",
+    "lat": 31.5204,
+    "lng": 74.3587,
+    "time_slot": "20:30 - 22:00",
+    "price": "2000 PKR"
+  }
+]
