@@ -26,7 +26,8 @@ from seed_data import EVENTS
 
 CHROMA_DIR = os.path.join(os.path.dirname(__file__), "chroma_data")
 COLLECTION_NAME = "outsy_events"
-EMBEDDING_MODEL = "models/text-embedding-004"
+EMBEDDING_MODEL = "models/gemini-embedding-001"
+EMBEDDING_DIMENSIONS = 768  # truncated via Matryoshka representation learning — ~0.3% quality loss vs full 3072
 
 _TIME_RE = re.compile(r"(\d{1,2}):(\d{2})\s*(AM|PM)", re.IGNORECASE)
 
@@ -42,6 +43,27 @@ genai.configure(api_key=_gemini_api_key)
 _client = chromadb.PersistentClient(path=CHROMA_DIR)
 
 
+from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
+
+class _NoOpEmbeddingFunction(EmbeddingFunction):
+    """We always supply precomputed Gemini embeddings directly to add()/query(),
+    so this should never actually run. Without something explicit attached
+    here, Chroma falls back to its own ONNX-based default embedding function,
+    which crashes with an illegal-instruction error on CPUs lacking
+    AVX2/AVX-512 (e.g. Render's free tier)."""
+    def __call__(self, input: Documents) -> Embeddings:
+        raise RuntimeError(
+            "_NoOpEmbeddingFunction was invoked directly — embeddings should "
+            "always be supplied explicitly via the embeddings= argument."
+        )
+
+    @staticmethod
+    def name() -> str:
+        return "outsy-noop"
+
+_noop_embedding_fn = _NoOpEmbeddingFunction()
+
+
 def _embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
     """Embeds a list of strings one at a time via Gemini. task_type should be
     'retrieval_document' when embedding seeded events, or 'retrieval_query'
@@ -49,7 +71,12 @@ def _embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
     Gemini's embedding model is tuned differently for each role."""
     embeddings = []
     for text in texts:
-        result = genai.embed_content(model=EMBEDDING_MODEL, content=text, task_type=task_type)
+        result = genai.embed_content(
+            model=EMBEDDING_MODEL,
+            content=text,
+            task_type=task_type,
+            output_dimensionality=EMBEDDING_DIMENSIONS,
+        )
         embeddings.append(result["embedding"])
     return embeddings
 
@@ -103,7 +130,7 @@ def _resolve_event_datetime(time_str: str, now: datetime) -> datetime:
 
 
 def get_collection():
-    return _client.get_or_create_collection(name=COLLECTION_NAME)
+    return _client.get_or_create_collection(name=COLLECTION_NAME, embedding_function=_noop_embedding_fn)
 
 
 def reseed_collection() -> int:
@@ -116,7 +143,7 @@ def reseed_collection() -> int:
     except Exception:
         pass  # didn't exist yet — fine
 
-    collection = _client.get_or_create_collection(name=COLLECTION_NAME)
+    collection = _client.get_or_create_collection(name=COLLECTION_NAME, embedding_function=_noop_embedding_fn)
     now = datetime.now()
 
     documents = [_event_document(e) for e in EVENTS]
@@ -143,7 +170,6 @@ def reseed_collection() -> int:
 
     collection.add(
         ids=[e["event_id"] for e in EVENTS],
-        documents=documents,
         embeddings=embeddings,
         metadatas=metadatas,
     )
