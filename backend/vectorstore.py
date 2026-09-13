@@ -2,30 +2,56 @@
 collection of local events for semantic retrieval, with real date/time
 filtering.
 
+Embeddings are computed via Gemini's embedding API rather than Chroma's
+bundled ONNX-based default embedding function. The ONNX path relies on a
+native library (onnxruntime) compiled expecting AVX2/AVX-512 CPU
+instructions, which crashes with an illegal-instruction error on hosts
+(like Render's free tier) that lack those instructions. Routing embeddings
+through Gemini avoids that native dependency entirely and reuses the same
+API key already used for the LLM calls in agent.py.
+
 The seeded dataset only describes *when* things happen in relative terms
 ("Today, 4:00 PM", "Tomorrow, 3:00 PM", "This weekend, 3:00 PM"), so on every
 app startup we resolve those into actual timestamps relative to right now
-and reseed the collection fresh. That keeps "today" and "tomorrow" accurate
-across days without needing to hand-maintain real dates in seed_data.py —
-just restart the backend on the day you're demoing.
-
-Embeddings use Chroma's bundled local embedding model (no API calls, no
-cost) — Gemini is reserved for the reasoning steps in agent.py.
+and reseed the collection fresh.
 """
 import os
 import re
 from datetime import datetime, timedelta, time as dtime
 
 import chromadb
+import google.generativeai as genai
 
 from seed_data import EVENTS
 
 CHROMA_DIR = os.path.join(os.path.dirname(__file__), "chroma_data")
 COLLECTION_NAME = "outsy_events"
+EMBEDDING_MODEL = "models/text-embedding-004"
+
+_TIME_RE = re.compile(r"(\d{1,2}):(\d{2})\s*(AM|PM)", re.IGNORECASE)
+
+_gemini_api_key = os.environ.get("GEMINI_API_KEY")
+if not _gemini_api_key:
+    raise RuntimeError(
+        "GEMINI_API_KEY is not set. Copy backend/.env.example to backend/.env "
+        "(or set it in your host's environment variables) with a key from "
+        "https://aistudio.google.com/app/apikey"
+    )
+genai.configure(api_key=_gemini_api_key)
 
 _client = chromadb.PersistentClient(path=CHROMA_DIR)
 
-_TIME_RE = re.compile(r"(\d{1,2}):(\d{2})\s*(AM|PM)", re.IGNORECASE)
+
+def _embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
+    """Embeds a list of strings one at a time via Gemini. task_type should be
+    'retrieval_document' when embedding seeded events, or 'retrieval_query'
+    when embedding a user's search text — this improves match quality since
+    Gemini's embedding model is tuned differently for each role."""
+    embeddings = []
+    for text in texts:
+        result = genai.embed_content(model=EMBEDDING_MODEL, content=text, task_type=task_type)
+        embeddings.append(result["embedding"])
+    return embeddings
 
 
 def _event_document(event: dict) -> str:
@@ -82,8 +108,9 @@ def get_collection():
 
 def reseed_collection() -> int:
     """Drops and rebuilds the collection every call, resolving each event's
-    relative time into a real timestamp anchored to *now*. Cheap at 30 docs —
-    called once on every app startup so dates never go stale."""
+    relative time into a real timestamp anchored to *now*, and computing
+    embeddings via Gemini instead of Chroma's default ONNX path. Cheap at 30
+    docs — called once on every app startup so dates never go stale."""
     try:
         _client.delete_collection(COLLECTION_NAME)
     except Exception:
@@ -91,6 +118,9 @@ def reseed_collection() -> int:
 
     collection = _client.get_or_create_collection(name=COLLECTION_NAME)
     now = datetime.now()
+
+    documents = [_event_document(e) for e in EVENTS]
+    embeddings = _embed_texts(documents, task_type="retrieval_document")
 
     metadatas = []
     for e in EVENTS:
@@ -113,7 +143,8 @@ def reseed_collection() -> int:
 
     collection.add(
         ids=[e["event_id"] for e in EVENTS],
-        documents=[_event_document(e) for e in EVENTS],
+        documents=documents,
+        embeddings=embeddings,
         metadatas=metadatas,
     )
     return len(EVENTS)
@@ -130,7 +161,9 @@ def get_event_by_id(event_id: str) -> dict | None:
 
 def semantic_search(query_text: str, top_k: int = 5, where: dict | None = None) -> list[dict]:
     collection = get_collection()
-    query_kwargs = {"query_texts": [query_text], "n_results": top_k}
+    query_embedding = _embed_texts([query_text], task_type="retrieval_query")[0]
+
+    query_kwargs = {"query_embeddings": [query_embedding], "n_results": top_k}
     if where:
         query_kwargs["where"] = where
     result = collection.query(**query_kwargs)
