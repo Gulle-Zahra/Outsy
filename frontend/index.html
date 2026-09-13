@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Outsy — find something to do</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root{
+    --ink:#17141a;
+    --ink-raised:#221d29;
+    --ink-line:#332c3b;
+    --marigold:#e8a33d;
+    --marigold-dim:#8a6428;
+    --rust:#b5562f;
+    --teal:#5b9c8f;
+    --paper:#f3ecdd;
+    --ash:#a89ead;
+    --ash-dim:#6f6577;
+    --radius-sm:8px;
+    --radius-md:14px;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%; overflow:hidden;}
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'Public Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;}
+
+  .app{
+    display:grid;
+    grid-template-columns: 440px 1fr;
+    grid-template-rows: 100vh;
+    height:100vh;
+  }
+  .chat-col, .map-col{
+    min-height:0;
+    height:100%;
+  }
+
+  /* ---------- Header ---------- */
+  .brand-row{
+    display:flex;
+    align-items:baseline;
+    gap:12px;
+    padding:22px 24px 16px;
+    border-bottom:1px solid var(--ink-line);
+  }
+  .brand-mark{
+    font-family:'Fraunces', serif;
+    font-size:26px;
+    font-weight:600;
+    letter-spacing:-0.01em;
+    color:var(--marigold);
+  }
+  .brand-tag{
+    font-size:13px;
+    color:var(--ash-dim);
+    line-height:1.4;
+  }
+
+  /* ---------- Chat column ---------- */
+  .chat-col{
+    display:flex;
+    flex-direction:column;
+    background:var(--ink);
+    border-right:1px solid var(--ink-line);
+    min-width:0;
+  }
+  .chat-thread{
+    flex:1;
+    overflow-y:auto;
+    padding:20px 24px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+  }
+  .msg{
+    max-width:88%;
+    line-height:1.5;
+    font-size:15px;
+  }
+  .msg.assistant{
+    align-self:flex-start;
+  }
+  .msg.assistant .bubble{
+    background:var(--ink-raised);
+    border:1px solid var(--ink-line);
+    border-radius:4px var(--radius-md) var(--radius-md) var(--radius-md);
+    padding:12px 14px;
+  }
+  .msg.user{
+    align-self:flex-end;
+  }
+  .msg.user .bubble{
+    background:var(--marigold);
+    color:#241a08;
+    border-radius:var(--radius-md) 4px var(--radius-md) var(--radius-md);
+    padding:12px 14px;
+    font-weight:500;
+  }
+  .msg .meta{
+    font-size:11px;
+    color:var(--ash-dim);
+    margin-top:5px;
+  }
+  .msg.user .meta{ text-align:right; }
+
+  .typing{
+    display:inline-flex;
+    gap:4px;
+    align-items:center;
+    padding:4px 0;
+  }
+  .typing span{
+    width:5px;height:5px;border-radius:50%;
+    background:var(--ash);
+    animation:blink 1.2s infinite ease-in-out;
+  }
+  .typing span:nth-child(2){animation-delay:0.15s;}
+  .typing span:nth-child(3){animation-delay:0.3s;}
+  @keyframes blink{ 0%,80%,100%{opacity:0.25;} 40%{opacity:1;} }
+
+  /* ---------- Match cards ---------- */
+  .matches{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    margin-top:4px;
+    width:100%;
+  }
+  .match-card.booked{
+    border-color: var(--teal);
+    background: linear-gradient(0deg, rgba(91,156,143,0.08), rgba(91,156,143,0.08)), var(--ink-raised);
+  }
+  .booked-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    color: var(--teal);
+    font-size:13px;
+    font-weight:600;
+  }
+  .match-card{
+    background:var(--ink-raised);
+    border:1px solid var(--ink-line);
+    border-radius:var(--radius-md);
+    padding:14px 14px 12px;
+    cursor:pointer;
+    transition:border-color .15s ease;
+  }
+  .match-card:hover, .match-card.active{
+    border-color:var(--marigold-dim);
+  }
+  .match-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:10px;
+  }
+  .match-name{
+    font-family:'Fraunces', serif;
+    font-size:16px;
+    font-weight:500;
+    color:var(--paper);
+  }
+  .match-sub{
+    font-size:13px;
+    color:var(--ash);
+    margin-top:4px;
+  }
+  .match-desc{
+    font-size:13px;
+    color:var(--ash);
+    margin-top:8px;
+    line-height:1.45;
+  }
+  .match-footer{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-top:10px;
+    font-size:12px;
+    color:var(--ash-dim);
+  }
+  .match-price{ color:var(--marigold); font-weight:600; }
+
+  .book-panel{
+    margin-top:10px;
+    display:flex;
+    gap:8px;
+  }
+  .book-panel input{
+    flex:1;
+    background:var(--ink);
+    border:1px solid var(--ink-line);
+    border-radius:var(--radius-sm);
+    padding:9px 10px;
+    color:var(--paper);
+    font-size:13px;
+    font-family:inherit;
+  }
+  .book-panel input:focus{ outline:none; border-color:var(--marigold-dim); }
+  .btn{
+    border:none;
+    border-radius:var(--radius-sm);
+    padding:9px 14px;
+    font-size:13px;
+    font-weight:600;
+    font-family:inherit;
+    cursor:pointer;
+  }
+  .btn-primary{ background:var(--marigold); color:#241a08; }
+  .btn-primary:hover{ background:#f0b158; }
+  .btn-primary:disabled{ background:var(--marigold-dim); cursor:not-allowed; }
+  .btn-whatsapp{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    background:var(--teal);
+    color:#0d211d;
+    text-decoration:none;
+    margin-top:10px;
+  }
+
+  /* ---------- Composer ---------- */
+  .composer{
+    border-top:1px solid var(--ink-line);
+    padding:14px 24px 18px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .loc-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    color:var(--ash-dim);
+  }
+  .loc-row input[type=checkbox]{ accent-color:var(--marigold); }
+  .loc-status{ color:var(--teal); }
+  .composer-input-row{
+    display:flex;
+    gap:10px;
+  }
+  .composer-input-row input{
+    flex:1;
+    background:var(--ink-raised);
+    border:1px solid var(--ink-line);
+    border-radius:999px;
+    padding:12px 16px;
+    color:var(--paper);
+    font-size:14px;
+    font-family:inherit;
+  }
+  .composer-input-row input:focus{ outline:none; border-color:var(--marigold-dim); }
+  .send-btn{
+    width:44px;height:44px;
+    border-radius:50%;
+    background:var(--marigold);
+    border:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .send-btn:disabled{ background:var(--marigold-dim); cursor:not-allowed; }
+  .send-btn svg{ width:18px; height:18px; }
+
+  /* ---------- Map column ---------- */
+  .map-col{
+    position:relative;
+    background:var(--ink-raised);
+  }
+  #map{
+    position:absolute;
+    inset:0;
+  }
+  .map-empty{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:10px;
+    color:var(--ash-dim);
+    text-align:center;
+    padding:40px;
+  }
+  .map-empty .glyph{
+    font-family:'Fraunces', serif;
+    font-size:44px;
+    color:var(--marigold-dim);
+  }
+  .map-empty p{ max-width:280px; font-size:14px; line-height:1.5; margin:0; }
+
+  .leaflet-popup-content-wrapper{
+    background:var(--ink-raised);
+    color:var(--paper);
+    border-radius:10px;
+  }
+  .leaflet-popup-tip{ background:var(--ink-raised); }
+  .popup-title{ font-family:'Fraunces', serif; font-size:15px; margin-bottom:4px; }
+  .popup-sub{ font-size:12px; color:var(--ash); }
+
+  ::-webkit-scrollbar{ width:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--ink-line); border-radius:8px; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns: 1fr; grid-template-rows: 56vh 1fr; }
+    .chat-col{ border-right:none; border-bottom:1px solid var(--ink-line); }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <section class="chat-col">
+    <div class="brand-row">
+      <span class="brand-mark">Outsy</span>
+      <span class="brand-tag">Tell me what you're up for — I'll find it and set up the booking.</span>
+    </div>
+
+    <div class="chat-thread" id="thread"></div>
+
+    <div class="composer">
+      <label class="loc-row">
+        <input type="checkbox" id="useLocation" />
+        <span id="locLabel">Share my location for closer results</span>
+      </label>
+      <div class="composer-input-row">
+        <input id="textInput" type="text" placeholder="I'm in Johar Town, bored, want something artistic today afternoon…" autocomplete="off" />
+        <button class="send-btn" id="sendBtn" title="Send">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 12L20 4L13 20L11 13L4 12Z" fill="#241a08"/></svg>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section class="map-col">
+    <div id="map"></div>
+    <div class="map-empty" id="mapEmpty">
+      <div class="glyph">Outsy</div>
+      <p>Matches will drop as pins here once you ask for something — pottery, board games, open mics, and more.</p>
+    </div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API_BASE = "http://localhost:8000";
+
+const thread = document.getElementById('thread');
+const textInput = document.getElementById('textInput');
+const sendBtn = document.getElementById('sendBtn');
+const useLocation = document.getElementById('useLocation');
+const locLabel = document.getElementById('locLabel');
+const mapEmpty = document.getElementById('mapEmpty');
+
+let coords = { lat: null, lng: null };
+let map, markers = [];
+
+function initMap(){
+  map = L.map('map', { zoomControl: true, attributionControl: true }).setView([31.5497, 74.3436], 11); // Lahore default
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(map);
+}
+initMap();
+setTimeout(() => map.invalidateSize(), 150);
+window.addEventListener('resize', () => map.invalidateSize());
+
+useLocation.addEventListener('change', () => {
+  if (!useLocation.checked){ coords = { lat: null, lng: null }; locLabel.textContent = "Share my location for closer results"; return; }
+  if (!navigator.geolocation){ locLabel.textContent = "Location isn't available on this device/browser"; useLocation.checked = false; return; }
+  locLabel.textContent = "Getting your location…";
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      locLabel.innerHTML = `<span class="loc-status">Using your current location</span>`;
+    },
+    (err) => {
+      const reasons = {
+        1: "Location permission was denied — check your browser's site settings",
+        2: "Your device couldn't determine a location right now",
+        3: "Location request timed out"
+      };
+      locLabel.textContent = reasons[err.code] || `Couldn't get your location (${err.message})`;
+      console.error('Geolocation error:', err.code, err.message);
+      useLocation.checked = false;
+    },
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+});
+
+function addMessage(role, contentEl){
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.appendChild(contentEl);
+  wrap.appendChild(bubble);
+  thread.appendChild(wrap);
+  thread.scrollTop = thread.scrollHeight;
+  return wrap;
+}
+
+function textNode(str){
+  const p = document.createElement('div');
+  p.textContent = str;
+  return p;
+}
+
+function addTyping(){
+  const el = document.createElement('div');
+  el.className = 'typing';
+  el.innerHTML = '<span></span><span></span><span></span>';
+  return addMessage('assistant', el);
+}
+
+function clearMarkers(){
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+}
+
+function plotMatches(matches){
+  clearMarkers();
+  if (!matches.length) return;
+  mapEmpty.style.display = 'none';
+  const bounds = [];
+  matches.forEach((m, i) => {
+    const marker = L.circleMarker([m.lat, m.lng], {
+      radius: 9,
+      color: '#e8a33d',
+      weight: 2,
+      fillColor: '#e8a33d',
+      fillOpacity: 0.85
+    }).addTo(map);
+    marker.bindPopup(`<div class="popup-title">${m.name}</div><div class="popup-sub">${m.location}, ${m.city} · ${m.time}</div>`);
+    marker.on('click', () => highlightCard(m.event_id));
+    markers.push(marker);
+    bounds.push([m.lat, m.lng]);
+  });
+  map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+}
+
+function highlightCard(eventId){
+  document.querySelectorAll('.match-card').forEach(c => {
+    c.classList.toggle('active', c.dataset.eventId === eventId);
+  });
+  const card = document.querySelector(`.match-card[data-event-id="${eventId}"]`);
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function buildMatchCard(m){
+  const card = document.createElement('div');
+  card.className = 'match-card';
+  card.dataset.eventId = m.event_id;
+
+  card.innerHTML = `
+    <div class="match-top">
+      <div class="match-name">${m.name}</div>
+    </div>
+    <div class="match-sub">${m.activity_type} · ${m.location}, ${m.city} · ${m.time}</div>
+    <div class="match-desc">${m.description}</div>
+    <div class="match-footer">
+      <span class="match-price">${m.price}</span>
+      <button class="btn btn-primary book-toggle">Book this</button>
+    </div>
+    <div class="book-panel" style="display:none;">
+      <input type="text" placeholder="Your name" class="book-name" />
+      <button class="btn btn-primary book-confirm">Confirm</button>
+    </div>
+  `;
+
+  card.addEventListener('mouseenter', () => {
+    const marker = markers[Array.from(document.querySelectorAll('.match-card')).indexOf(card)];
+  });
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('.book-panel') || e.target.classList.contains('book-toggle')) return;
+    map.panTo([m.lat, m.lng]);
+    highlightCard(m.event_id);
+  });
+
+  card.querySelector('.book-toggle').addEventListener('click', () => {
+    const panel = card.querySelector('.book-panel');
+    panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+  });
+
+  card.querySelector('.book-confirm').addEventListener('click', async () => {
+    const nameInput = card.querySelector('.book-name');
+    const name = nameInput.value.trim();
+    if (!name){ nameInput.focus(); return; }
+    const confirmBtn = card.querySelector('.book-confirm');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Booking…';
+    try {
+      const res = await fetch(`${API_BASE}/book`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: m.event_id, name })
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || 'Booking failed');
+      const data = await res.json();
+      markCardBooked(card, data);
+      renderBookingResult(data);
+    } catch (err) {
+      addMessage('assistant', textNode(`Couldn't put that booking together: ${err.message}`));
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm';
+    }
+  });
+
+  return card;
+}
+
+function markCardBooked(card, data){
+  card.classList.add('booked');
+  const toggleBtn = card.querySelector('.book-toggle');
+  toggleBtn.textContent = 'Booked';
+  toggleBtn.disabled = true;
+
+  const panel = card.querySelector('.book-panel');
+  panel.style.display = 'flex';
+  panel.innerHTML = `
+    <div class="booked-badge">✓ Booked — message ready for WhatsApp</div>
+    <a class="btn btn-whatsapp" href="${data.wa_link}" target="_blank" rel="noopener" style="width:100%; justify-content:center;">Open WhatsApp</a>
+  `;
+}
+
+function renderBookingResult(data){
+  const el = document.createElement('div');
+  el.innerHTML = `
+    <div>Booked! Opening WhatsApp with your message to <strong>${data.event_name}</strong>:</div>
+    <div class="match-desc" style="margin-top:8px; font-style:italic;">"${data.message}"</div>
+    <a class="btn btn-whatsapp" href="${data.wa_link}" target="_blank" rel="noopener">Didn't open? Tap here for WhatsApp</a>
+  `;
+  addMessage('assistant', el);
+
+  // Auto-open so the person doesn't have to hunt for the link.
+  // Browsers may block this if it's not a direct result of the click —
+  // the visible link above and the one on the card are the fallback for that case.
+  window.open(data.wa_link, '_blank', 'noopener');
+}
+
+async function handleSend(){
+  const text = textInput.value.trim();
+  if (!text) return;
+  addMessage('user', textNode(text));
+  textInput.value = '';
+  sendBtn.disabled = true;
+
+  const typingEl = addTyping();
+
+  try {
+    const res = await fetch(`${API_BASE}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, lat: coords.lat, lng: coords.lng })
+    });
+    typingEl.remove();
+    if (!res.ok) throw new Error((await res.json()).detail || 'Something went wrong');
+    const data = await res.json();
+
+    if (!data.matches.length){
+      addMessage('assistant', textNode("Nothing close enough to that yet in the seeded list — try a different activity or area."));
+      return;
+    }
+
+    const summary = document.createElement('div');
+    summary.className = 'msg-summary';
+    summary.textContent = `Found ${data.matches.length} thing${data.matches.length > 1 ? 's' : ''} that fit — pinned on the map, closest match first.`;
+    const matchesWrap = document.createElement('div');
+    matchesWrap.className = 'matches';
+    data.matches.forEach(m => matchesWrap.appendChild(buildMatchCard(m)));
+
+    const container = document.createElement('div');
+    container.appendChild(summary);
+    container.appendChild(matchesWrap);
+    addMessage('assistant', container);
+
+    plotMatches(data.matches);
+  } catch (err) {
+    typingEl.remove();
+    addMessage('assistant', textNode(`Couldn't reach Outsy's backend: ${err.message}. Is the FastAPI server running on ${API_BASE}?`));
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+sendBtn.addEventListener('click', handleSend);
+textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSend(); });
+
+// Opening message
+addMessage('assistant', textNode("What are you in the mood for today, and where are you?"));
+</script>
+</body>
+</html>

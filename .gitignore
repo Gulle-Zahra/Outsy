@@ -1,0 +1,6 @@
+backend/.env
+backend/venv/
+backend/Myenv/
+backend/__pycache__/
+backend/chroma_data/
+*.pyc
