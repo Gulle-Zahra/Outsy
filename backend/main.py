@@ -36,8 +36,10 @@ def query(req: QueryRequest):
         raise HTTPException(status_code=400, detail="text is required")
     try:
         state = run_query(req.text, req.lat, req.lng)
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
     return QueryResponse(
         matches=state.matches,
@@ -53,8 +55,10 @@ def book(req: BookRequest):
         state = run_booking(req.event_id, req.name)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
     return BookResponse(
         wa_link=state.wa_link,
