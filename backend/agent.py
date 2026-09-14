@@ -24,7 +24,7 @@ from models import AgentState, ExtractedIntent
 from seed_data import EVENTS
 from vectorstore import semantic_search, get_event_by_id
 
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 
 def _llm():
